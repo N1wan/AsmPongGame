@@ -9,14 +9,12 @@
 sceneNumber:		.byte	0
 # a random number
 randomNumber:		.byte	0
-# exiting the program
-outWordExit1:		.word 	0x0604
-outWordExit2:		.word 	0x2000
 
 ### ***** MAIN MENU DATA ***** ###
 isPrintedMainMenu:		.byte	0
 TextMainMenu:			.asciz	""
 						.asciz	"                                   MAIN MENU:"
+						.asciz	""
 						.asciz	""
 						.ascii	"  PREVIOUS GAME SCORE:               " 
 previousScorePlayer1:	.byte	48
@@ -24,25 +22,24 @@ previousScorePlayer1:	.byte	48
 previousScorePlayer2:	.Byte	48
 						.asciz	""
 						.asciz	""
+						.asciz	""
 						.asciz	"  RULES:   A ball will be spawned in the center of the screen with a random"
-						.asciz	"           direction. Each player has to try to keep the ball from going past"
-						.asciz	"           their paddle. If a ball is let through, the scoring player gets"
-						.asciz	"           one point. first to 8 points wins. good luck and have fun!"
-						.asciz	""
-						.asciz	"  CONTROLS:  W/S               = up/down   (player 1)"
-						.asciz	"             upArrow/downArrow = up/down   (player 2)"
-						.asciz	""
-						.asciz	"             to start the game: press 'enter'"
-						.asciz	""
-						.asciz	"             to pause the game: press 'p'"
-						.asciz	""
-						.asciz	"             to go to the main menu: press 'm'"
-						.asciz	""
-						.asciz	"             to exit the program: press 'esc'"
+						.asciz	"           direction. Each player has to try to keep the ball from going"
+						.asciz	"           past their paddle. If a ball is let through, the scoring player"
+						.asciz	"           gets one point. first to 8 points wins. good luck and have fun!"
 						.asciz	""
 						.asciz	""
-						.asciz	"  made by: Niwan van den Berch van Heemstede"
-						.asciz	"  creation date: 12 October 2024"
+						.asciz	"  CONTROLS:       up/down (player 1)   =   W/S"
+						.asciz	"                  up/down (player 2)   =   upArrow/downArrow "
+						.asciz	""
+						.asciz	"                   to start the game   :   press 'enter'"
+						.asciz	"                   to pause the game   :   press 'p'"
+						.asciz	"              to go to the main menu   :   press 'm'"
+						.asciz	"                 to exit the program   :   press 'esc'"
+						.asciz	""
+						.asciz	""
+						.asciz	"                    made by: Niwan van den Berch van Heemstede"
+						.asciz	"                        creation date: 13 October 2024"
 						.asciz	""				
 
 ### ***** GAME DATA ***** ###
@@ -134,7 +131,7 @@ gameLoop:
 	jmp		2f
 	1:
 	2:
-	
+
 	# ***********************************************************
 	
 	leave
