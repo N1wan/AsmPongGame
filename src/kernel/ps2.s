@@ -22,6 +22,7 @@ along with gamelib-x64. If not, see <http://www.gnu.org/licenses/>.
 .file "src/kernel/ps2.s"
 
 .section .kernel.data
+testNumString:		.asciz "Number is : %u\n"
 ps2_init_str:		.asciz "* Initializing PS/2 subsystem...\n"
 ps2_init_done_str:	.asciz "* Initializing PS/2 subsystem: done\n"
 ps2_status_str:		.asciz "ps/2 status: %x\n"
@@ -40,6 +41,7 @@ code_set1:	.byte 0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=
 			.byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 			.byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 			.byte 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+keyflags:	.quad 0, 0, -1, -1 # one bit for all keys 	 
 
 .section .kernel
 
@@ -53,19 +55,28 @@ init_ps2:
 	# step 1: TODO: make sure USB goes first and disables USB legacy; after that we check there's ps/2 or not
 	# step 2: TODO check that with ACPI (bit 1, offset 109 in FADT should be on)
 	# step 3: disable devices
-	#mov		$0xAD, %rax
-	#out		%al, $PS2_COMMAND
-	#mov		$0xA7, %rax
-	#out		%al, $PS2_COMMAND
+	mov		$0xAD, %rax
+	out		%al, $PS2_COMMAND
+	mov		$0xA7, %rax
+	out		%al, $PS2_COMMAND
 
 	# step 4: flush the buffer
 	in		$PS2_DATA, %al		# ignore content
 
 	# step 5: set controller configuration byte
+	mov		$0x20, %rax
+	out		%al, $PS2_COMMAND
+
+	in		$PS2_DATA, %al
+
+	mov		$0, %rax			# 0 in all bits for Controller Configuration Byte
+	out		%al, $PS2_DATA
+	mov		$0x60, %rax
+	out		%al, $PS2_COMMAND
 	
 	# step 6: perform self test
-#	mov		$0xAA, %rax
-#	out		%al, $PS2_COMMAND
+	mov		$0xAA, %rax
+	out		%al, $PS2_COMMAND
 # TODO check response: 0x55
 
 	# step 7: one or two channels? (see step 5)
@@ -73,6 +84,10 @@ init_ps2:
 # step 8: perform interface test
 
 # step 9: enable devices
+	mov		$0xAE, %rax
+	out		%al, $PS2_COMMAND
+	mov		$0xA8, %rax
+	out		%al, $PS2_COMMAND
 
 # step 10: reset devices
 
@@ -97,38 +112,74 @@ print_ps2_status:
 
 ps2_bottom_half:
 	enter	$0, $0
-	push	%rax
+	pushq	%rax
+	pushq	%r8
+	pushq	%r9
+	pushq	%r10
+	pushq	%r11
 
 	mov		$0, %rax
 	in		$PS2_DATA, %al
-	bt		$7, %rax			# TODO this way we only handle presses, not releases for now
-	jc		9f
-	mov		read_bytes, %rbx
-	shl		$8, %rbx
-	mov		%al, %bl
-	mov		%rbx, read_bytes
 
-9:
-	pop		%rax
-	leave
-	ret
+	movq	%rax, %r8
 
-ps2_getkey:
-	enter	$0, $0
-	push	%rax
-
-	mov		$0, %r8					# prepare an answer
-
-	mov		read_bytes, %rax		# TODO actually have a buffer
+	mov		$keyflags, %r9
+	shr		$3, %r8	
+	addq	%r8, %r9			# r9 is now the address of the correct byte
+	
 	mov		%rax, %r8
-	and		$0xFF, %r8
-	cmp		$0, %r8
-	je		9f
-	shr		$8, %rax
-	mov		%rax, read_bytes
+	and		$7, %r8			# right 3 bits of the code in r8 to decide which flag to set
 
+	movq	$1, %r10
+	3:
+	cmpq	$0, %r8		# r8 == 0
+	je		4f			# end loop if
+
+	shl		%r10
+
+	decq	%r8			# r8--
+	jmp		3b			# loop
+	4:
+
+	orb 	%r10b, (%r9)
+	
+	# check if the code is release 
+	cmpq	$128, %rax
+	jl		8f				# if, set flag, else clear flag
+
+	# take the last 128 bits in flags, flip them, and put them in the first 128 bytes
+	movq	$keyflags, %r9
+	movq	16(%r9), %r10
+	movq	24(%r9), %r11
+
+	xorq	$-1, %r10
+	xorq	$-1, %r11
+
+	movq	%r10, (%r9)
+	movq	%r11, 8(%r9)
+
+	jmp		9f
+
+	8:
+	# take the first 128 bits in flags, flip them, and put them in the last 128 bytes
+	movq	$keyflags, %r9
+	movq	(%r9), %r10
+	movq	8(%r9), %r11
+
+	xorq	$-1, %r10
+	xorq	$-1, %r11
+
+	movq	%r10, 16(%r9)
+	movq	%r11, 24(%r9)
+
+	# ********************************************************
 9:
-	pop		%rax
+
+	popq	%r11
+	popq	%r10
+	popq	%r9
+	popq	%r8
+	popq	%rax
 	leave
 	ret
 
@@ -145,3 +196,79 @@ ps2_translate_scancode:
 	leave
 	ret
 
+# *******************************************************************************
+# * Subroutine: boolean ps2_getFlag(int scancode)								*
+# * variables: scancode in %rdi, return in %rax									*
+# * description: returns if the flag of a scancode is set						*
+# *******************************************************************************
+ps2_getFlag:
+	enter	$0, $0
+
+	cmp		$256, %rdi
+	jge		8f
+	cmp		$0, %rdi
+	jl		8f
+
+	mov		%rdi, %r8	
+	mov		$keyflags, %r9
+	shr		$3, %r8	
+	addq	%r8, %r9			# r9 is now the address of the correct byte
+	movzbq	(%r9), %r9			# r9 is now the correct byte of flags
+
+	movq	%rdi, %r8
+	andq	$7, %r8			# right 3 bits of the code in r8 to decide which flag to check
+
+	movq	$1, %r10
+	3:
+	cmpq	$0, %r8		# r8 == 0
+	je		4f			# end loop if
+
+	shl		%r10
+
+	decq	%r8			# r8--
+	jmp		3b			# loop
+	4:
+
+	and		%r10, %r9
+
+	cmp		$0, %r9
+	je		8f
+	movq	$1, %rax
+	jmp		9f
+8:
+	movq 	$0, %rax
+9:
+	leave
+	ret
+
+# *******************************************************************************
+# * Subroutine: boolean ps2_getkey(int scancode)								*
+# * variables: scancode in %rdi, return in %rax									*
+# * description: returns if the flag of a scancode is set						*
+# *******************************************************************************
+ps2_getkey:
+	enter	$0, $0
+
+	call	ps2_getFlag
+
+	leave
+	ret
+
+# *******************************************************************************
+# * Subroutine: void resetFlags()												*
+# * variables: none																*
+# * description: resets all the key flags										*
+# *******************************************************************************
+resetFlags:
+	enter	$0, $0
+	pushq	%r9
+
+	movq	$keyflags, %r9
+	movq	$0, (%r9)
+	movq	$0, 8(%r9)
+	movq	$-1, 16(%r9)
+	movq	$-1, 24(%r9)
+	
+	popq	%r9
+	leave
+	ret
